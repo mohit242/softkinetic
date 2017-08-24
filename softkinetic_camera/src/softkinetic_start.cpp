@@ -111,6 +111,8 @@ bool g_bDeviceFound = false;
 ros::Publisher pub_cloud;
 ros::Publisher pub_rgb_info;
 ros::Publisher pub_depth_info;
+// Publisher for custom rgb
+image_transport::Publisher pub_my_rgb;
 image_transport::Publisher pub_rgb;
 image_transport::Publisher pub_mono;
 image_transport::Publisher pub_depth;
@@ -119,11 +121,13 @@ sensor_msgs::CameraInfo rgb_info;
 sensor_msgs::CameraInfo depth_info;
 
 sensor_msgs::Image img_rgb;
+sensor_msgs::Image img_my_rgb;
 sensor_msgs::Image img_mono;
 sensor_msgs::Image img_depth;
 sensor_msgs::PointCloud2 cloud;
 
-cv::Mat cv_img_rgb; // Open CV image containers
+cv::Mat cv_img_rgb;
+cv::Mat cv_img_my_rgb;  // Open CV image containers
 cv::Mat cv_img_yuy2;
 cv::Mat cv_img_mono;
 cv::Mat cv_img_depth;
@@ -449,6 +453,20 @@ void onNewDepthSample(DepthNode node, DepthNode::NewSampleReceivedData data)
       setupCameraInfo(data.stereoCameraParameters.depthIntrinsics, depth_info);
     }
   }
+   if (img_my_rgb.data.size() == 0)
+  {
+    // Create two sensor_msg::Image for color and grayscale images on new camera image
+    //int32_t w, h;
+    //FrameFormat_toResolution(data.captureConfiguration.frameFormat, &w, &h);
+
+    img_my_rgb.width  = img_depth.width;
+    img_my_rgb.height = img_depth.height;
+    img_my_rgb.encoding = "bgr8";
+    img_my_rgb.data.resize(img_my_rgb.width * img_my_rgb.height * 3);
+    img_my_rgb.step = img_my_rgb.width * 3;
+
+    cv_img_my_rgb.create(img_depth.height, img_depth.width, CV_8UC3);
+  }
 
   int32_t w = img_depth.width;
   int32_t h = img_depth.height;
@@ -539,7 +557,14 @@ void onNewDepthSample(DepthNode node, DepthNode::NewSampleReceivedData data)
   img_depth.header.stamp = ros::Time::now();
   cloud.header.stamp = ros::Time::now();
   depth_info.header      = img_depth.header;
+	std::memcpy(img_my_rgb.data.data(),  cv_img_my_rgb.ptr(),  img_my_rgb.data.size());
+  // Ensure that all the images and camera info are timestamped and have the proper frame id
+  img_my_rgb.header.stamp = ros::Time::now();
+  //img_mono.header      = img_rgb.header;
+  //rgb_info.header      = img_rgb.header;
 
+  // Publish the rgb and mono images and camera info
+  pub_my_rgb.publish(img_my_rgb);
   pub_cloud.publish(cloud);
   pub_depth.publish(img_depth);
   pub_depth_info.publish(depth_info);
@@ -988,6 +1013,7 @@ int main(int argc, char* argv[])
   // Initialize publishers
   pub_cloud = nh.advertise<sensor_msgs::PointCloud2>("depth/points", 1);
   pub_rgb = it.advertise("rgb/image_color", 1);
+  pub_my_rgb = it.advertise("custom_rgb/image_color", 1);
   pub_mono = it.advertise("rgb/image_mono", 1);
   pub_depth = it.advertise("depth/image_raw", 1);
   pub_depth_info = nh.advertise<sensor_msgs::CameraInfo>("depth/camera_info", 1);
